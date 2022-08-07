@@ -16,6 +16,12 @@ jobs:
           go-version: '1.17'
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
+      - name: Log in to GitHub Docker Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Make-manifest
         run: |
           cd opensearch-operator
@@ -32,12 +38,12 @@ jobs:
         run: |
           cd opensearch-operator
           go version
-          go env
-          go get opensearch.opster.io/pkg/builders
-          go get opensearch.opster.io/pkg/helpers
-          make test
-          export IMG=public.ecr.aws/opsterio/opensearch-operator:$RELEASE_VERSION
-          aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/opsterio
+          #go env
+          #go get opensearch.opster.io/pkg/builders
+          #go get opensearch.opster.io/pkg/helpers
+          #make test
+          export IMG=ghcr.io/swoehrl-mw/opensearch-k8s-operator:$RELEASE_VERSION
+          #aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/opsterio
           docker buildx build --platform="linux/amd64,linux/arm,linux/arm64" . -f Dockerfile -t $IMG --push
       - name: Create Release
         id: create_release
