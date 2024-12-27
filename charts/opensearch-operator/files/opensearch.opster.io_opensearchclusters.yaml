@@ -4675,6 +4675,13 @@ spec:
                       type: object
                     component:
                       type: string
+                    controllerSidecar:
+                      properties:
+                        enable:
+                          type: boolean
+                        healthPerPool:
+                          type: boolean
+                      type: object
                     diskSize:
                       type: string
                     env:

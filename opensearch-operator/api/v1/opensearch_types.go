@@ -124,6 +124,7 @@ type NodePool struct {
 	PriorityClassName         string                            `json:"priorityClassName,omitempty"`
 	Pdb                       *PdbConfig                        `json:"pdb,omitempty"`
 	Probes                    *ProbesConfig                     `json:"probes,omitempty"`
+	ControllerSidecar         *ControllerSidecarConfig          `json:"controllerSidecar,omitempty"`
 }
 
 // PersistencConfig defines options for data persistence
@@ -173,6 +174,11 @@ type BootstrapConfig struct {
 	AdditionalConfig map[string]string `json:"additionalConfig,omitempty"`
 	PluginsList      []string          `json:"pluginsList,omitempty"`
 	Keystore         []KeystoreValue   `json:"keystore,omitempty"`
+}
+
+type ControllerSidecarConfig struct {
+	Enable        bool `json:"enable,omitempty"`
+	HealthPerPool bool `json:"healthPerPool,omitempty"`
 }
 
 type DashboardsServiceSpec struct {

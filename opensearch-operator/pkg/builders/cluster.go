@@ -443,6 +443,152 @@ func NewSTSForNodePool(
 		initContainers = append(initContainers, keystoreInitContainer)
 	}
 
+	var containers []corev1.Container
+
+	containers = append(containers, corev1.Container{
+		Env: []corev1.EnvVar{
+			{
+				Name:  "cluster.initial_master_nodes",
+				Value: BootstrapPodName(cr),
+			},
+			{
+				Name:  "discovery.seed_hosts",
+				Value: DiscoveryServiceName(cr),
+			},
+			{
+				Name:  "cluster.name",
+				Value: cr.Name,
+			},
+			{
+				Name:  "network.bind_host",
+				Value: "0.0.0.0",
+			},
+			{
+				// Make elasticsearch announce its hostname instead of IP so that certificates using the hostname can be verified
+				Name:      "network.publish_host",
+				ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.name"}},
+			},
+			{
+				Name:  "OPENSEARCH_JAVA_OPTS",
+				Value: jvm,
+			},
+			{
+				Name:  "node.roles",
+				Value: strings.Join(selectedRoles, ","),
+			},
+			{
+				Name:  "http.port",
+				Value: fmt.Sprint(cr.Spec.General.HttpPort),
+			},
+		},
+		Name:            "opensearch",
+		Command:         mainCommand,
+		Image:           image.GetImage(),
+		ImagePullPolicy: image.GetImagePullPolicy(),
+		Resources:       node.Resources,
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "http",
+				ContainerPort: cr.Spec.General.HttpPort,
+			},
+			{
+				Name:          "transport",
+				ContainerPort: 9300,
+			},
+		},
+		StartupProbe:    &startupProbe,
+		LivenessProbe:   &livenessProbe,
+		ReadinessProbe:  &readinessProbe,
+		VolumeMounts:    volumeMounts,
+		SecurityContext: securityContext,
+	})
+
+	if node.ControllerSidecar != nil && node.ControllerSidecar.Enable {
+		var lockName string
+		if node.ControllerSidecar.HealthPerPool {
+			lockName = cr.Name + "-" + node.Component
+		} else {
+			lockName = cr.Name
+		}
+		// TODO
+		containers = append(containers, corev1.Container{
+			Env: []corev1.EnvVar{
+				{
+					Name:  "LOCK_NAME",
+					Value: lockName,
+				},
+				{
+					Name: "CLUSTER_NAMESPACE",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.namespace",
+						},
+					},
+				},
+				{
+					Name: "POD_NAME",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.name",
+						},
+					},
+				},
+				{
+					Name:  "HTTP_PORT",
+					Value: fmt.Sprint(cr.Spec.General.HttpPort),
+				},
+			},
+			Name:            "controller-sidecar",
+			Image:           "oso-sidecar:dev", // TODO
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					"cpu":    resource.MustParse("100m"),
+					"memory": resource.MustParse("64Mi"),
+				},
+				Limits: corev1.ResourceList{
+					"cpu":    resource.MustParse("100m"),
+					"memory": resource.MustParse("64Mi"),
+				},
+			},
+			Ports: []corev1.ContainerPort{
+				{
+					Name:          "http",
+					ContainerPort: 8123,
+				},
+			},
+			LivenessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path: "/health",
+						Port: intstr.FromInt(8123),
+					},
+				},
+				InitialDelaySeconds: 2,
+				TimeoutSeconds:      2,
+				PeriodSeconds:       20,
+				FailureThreshold:    2,
+			},
+			ReadinessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path: "/cluster_health",
+						Port: intstr.FromInt(8123),
+					},
+				},
+				InitialDelaySeconds: readinessProbeInitialDelaySeconds,
+				PeriodSeconds:       readinessProbePeriodSeconds,
+				FailureThreshold:    readinessProbeFailureThreshold,
+				TimeoutSeconds:      readinessProbeTimeoutSeconds,
+			},
+			VolumeMounts: []corev1.VolumeMount{{
+				Name:      "admin-credentials",
+				MountPath: "/mnt/admin-credentials",
+			}},
+			SecurityContext: securityContext,
+		})
+	}
+
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        cr.Name + "-" + node.Component,
@@ -465,65 +611,7 @@ func NewSTSForNodePool(
 					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Env: []corev1.EnvVar{
-								{
-									Name:  "cluster.initial_master_nodes",
-									Value: BootstrapPodName(cr),
-								},
-								{
-									Name:  "discovery.seed_hosts",
-									Value: DiscoveryServiceName(cr),
-								},
-								{
-									Name:  "cluster.name",
-									Value: cr.Name,
-								},
-								{
-									Name:  "network.bind_host",
-									Value: "0.0.0.0",
-								},
-								{
-									// Make elasticsearch announce its hostname instead of IP so that certificates using the hostname can be verified
-									Name:      "network.publish_host",
-									ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.name"}},
-								},
-								{
-									Name:  "OPENSEARCH_JAVA_OPTS",
-									Value: jvm,
-								},
-								{
-									Name:  "node.roles",
-									Value: strings.Join(selectedRoles, ","),
-								},
-								{
-									Name:  "http.port",
-									Value: fmt.Sprint(cr.Spec.General.HttpPort),
-								},
-							},
-							Name:            "opensearch",
-							Command:         mainCommand,
-							Image:           image.GetImage(),
-							ImagePullPolicy: image.GetImagePullPolicy(),
-							Resources:       node.Resources,
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "http",
-									ContainerPort: cr.Spec.General.HttpPort,
-								},
-								{
-									Name:          "transport",
-									ContainerPort: 9300,
-								},
-							},
-							StartupProbe:    &startupProbe,
-							LivenessProbe:   &livenessProbe,
-							ReadinessProbe:  &readinessProbe,
-							VolumeMounts:    volumeMounts,
-							SecurityContext: securityContext,
-						},
-					},
+					Containers:                containers,
 					InitContainers:            initContainers,
 					Volumes:                   volumes,
 					ServiceAccountName:        cr.Spec.General.ServiceAccount,
