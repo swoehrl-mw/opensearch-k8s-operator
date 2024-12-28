@@ -74,30 +74,38 @@ func (r *RollingRestartReconciler) Reconcile() (ctrl.Result, error) {
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		// For newly created STS updatedReplicas is not set, so treat it as set to Spec.Replicas
-		updatedReplicas := sts.Status.UpdatedReplicas
-		if updatedReplicas == 0 {
-			updatedReplicas = pointer.Int32Deref(sts.Spec.Replicas, 1)
+
+		if sts.Status.UpdateRevision == "" {
+			// STS status is not yet updated, don't do anything
+			continue
 		}
 
-		// TODO
-		if sts.Status.UpdateRevision != "" &&
-			updatedReplicas != pointer.Int32Deref(sts.Spec.Replicas, 1) {
-			pendingUpdate = true
-			break
-		} else if sts.Status.UpdateRevision != "" &&
-			sts.Status.CurrentRevision != sts.Status.UpdateRevision {
-			// If all pods in sts are updated to spec.replicas but current version is not updated.
-			err := r.client.UdateObjectStatus(&sts, func(object client.Object) {
-				instance := object.(*appsv1.StatefulSet)
-				instance.Status.CurrentRevision = sts.Status.UpdateRevision
-			})
-			if err != nil {
-				lg.Error(err, "failed to update status")
-				return ctrl.Result{}, err
+		if sts.Status.CurrentRevision != sts.Status.UpdateRevision {
+			if sts.Status.UpdatedReplicas != pointer.Int32Deref(sts.Spec.Replicas, 1) {
+				pendingUpdate = true
+			} else {
+				// If all pods in sts are updated to spec.replicas but current version is not updated.
+				err := r.client.UdateObjectStatus(&sts, func(object client.Object) {
+					instance := object.(*appsv1.StatefulSet)
+					instance.Status.CurrentRevision = sts.Status.UpdateRevision
+				})
+				if err != nil {
+					lg.Error(err, "failed to update status")
+					return ctrl.Result{}, err
+				}
+			}
+		} else {
+			updatedReplicas := sts.Status.UpdatedReplicas
+			if updatedReplicas == 0 {
+				// For newly created STS updatedReplicas is not set, so treat it as set to Spec.Replicas
+				updatedReplicas = pointer.Int32Deref(sts.Spec.Replicas, 1)
 			}
 
+			if updatedReplicas != pointer.Int32Deref(sts.Spec.Replicas, 1) {
+				pendingUpdate = true
+			}
 		}
+
 		if sts.Status.ReadyReplicas != pointer.Int32Deref(sts.Spec.Replicas, 1) {
 			return ctrl.Result{
 				Requeue:      true,
