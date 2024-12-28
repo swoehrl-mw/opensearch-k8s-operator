@@ -72,6 +72,12 @@ spec:
           value: "{{ .Values.manager.parallelRecoveryEnabled }}"
         - name: PPROF_ENDPOINTS_ENABLED
           value: "{{ .Values.manager.pprofEndpointsEnabled }}"
+        {{- if .Values.controllerSidecar.image }}
+        - name: CONTROLLER_SIDECAR_IMAGE
+          value: {{ .Values.controllerSidecar.image }}
+        {{- end }}
+        - name: CONTROLLER_SIDECAR_VERSION
+          value: "{{ .Chart.AppVersion }}"
         {{- if .Values.manager.extraEnv }}
         {{- toYaml .Values.manager.extraEnv | nindent 8 }}
         {{- end }}

@@ -310,6 +310,7 @@ func NewSTSForNodePool(
 
 	image := helpers.ResolveImage(cr, &node)
 	initHelperImage := helpers.ResolveInitHelperImage(cr)
+	sidecarImage := helpers.ResolveControllerSidecarImage(&node)
 	resources := cr.Spec.InitHelper.Resources
 
 	startUpCommand := "./opensearch-docker-entrypoint.sh"
@@ -505,12 +506,11 @@ func NewSTSForNodePool(
 
 	if node.ControllerSidecar != nil && node.ControllerSidecar.Enable {
 		var lockName string
-		if node.ControllerSidecar.HealthPerPool {
+		if node.ControllerSidecar.ReadinessPerPool {
 			lockName = cr.Name + "-" + node.Component
 		} else {
 			lockName = cr.Name
 		}
-		// TODO
 		containers = append(containers, corev1.Container{
 			Env: []corev1.EnvVar{
 				{
@@ -539,8 +539,8 @@ func NewSTSForNodePool(
 				},
 			},
 			Name:            "controller-sidecar",
-			Image:           "oso-sidecar:dev", // TODO
-			ImagePullPolicy: corev1.PullIfNotPresent,
+			Image:           sidecarImage.GetImage(),
+			ImagePullPolicy: sidecarImage.GetImagePullPolicy(),
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					"cpu":    resource.MustParse("100m"),
@@ -566,13 +566,13 @@ func NewSTSForNodePool(
 				},
 				InitialDelaySeconds: 2,
 				TimeoutSeconds:      2,
-				PeriodSeconds:       20,
+				PeriodSeconds:       10,
 				FailureThreshold:    2,
 			},
 			ReadinessProbe: &corev1.Probe{
 				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
-						Path: "/cluster_health",
+						Path: "/cluster_readiness",
 						Port: intstr.FromInt(8123),
 					},
 				},
@@ -587,6 +587,7 @@ func NewSTSForNodePool(
 			}},
 			SecurityContext: securityContext,
 		})
+		image.ImagePullSecrets = append(image.ImagePullSecrets, sidecarImage.ImagePullSecrets...)
 	}
 
 	sts := &appsv1.StatefulSet{

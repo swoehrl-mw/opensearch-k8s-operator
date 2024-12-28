@@ -177,8 +177,9 @@ type BootstrapConfig struct {
 }
 
 type ControllerSidecarConfig struct {
-	Enable        bool `json:"enable,omitempty"`
-	HealthPerPool bool `json:"healthPerPool,omitempty"`
+	Enable           bool `json:"enable,omitempty"`
+	*ImageSpec       `json:",inline,omitempty"`
+	ReadinessPerPool bool `json:"readinessPerPool,omitempty"`
 }
 
 type DashboardsServiceSpec struct {

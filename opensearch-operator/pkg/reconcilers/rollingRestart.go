@@ -74,8 +74,15 @@ func (r *RollingRestartReconciler) Reconcile() (ctrl.Result, error) {
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+		// For newly created STS updatedReplicas is not set, so treat it as set to Spec.Replicas
+		updatedReplicas := sts.Status.UpdatedReplicas
+		if updatedReplicas == 0 {
+			updatedReplicas = pointer.Int32Deref(sts.Spec.Replicas, 1)
+		}
+
+		// TODO
 		if sts.Status.UpdateRevision != "" &&
-			sts.Status.UpdatedReplicas != pointer.Int32Deref(sts.Spec.Replicas, 1) {
+			updatedReplicas != pointer.Int32Deref(sts.Spec.Replicas, 1) {
 			pendingUpdate = true
 			break
 		} else if sts.Status.UpdateRevision != "" &&
